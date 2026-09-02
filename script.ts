@@ -1,7 +1,7 @@
-type MetaToken = { role: 'meta'; key: string; value?: string };
-type Chord = { index: number; chord: string };
-type Measure = { lyric: string; chords: Chord[] };
-type MeasuresToken = { role: 'measures'; measures: Measure[] };
+type MetaToken = { role: 'meta'; key: string; value?: string; };
+type Chunk = { chord: string; lyric: string; };
+type Measure = Chunk[]
+type MeasuresToken = { role: 'measures'; measures: Measure[]; };
 type Token = MetaToken | MeasuresToken;
 
 declare var scrapbox: any;
@@ -60,10 +60,12 @@ class AutoScroller {
 class Chordpro {
 	static readonly #metaRegExp = /^{(\w+)(?::(.+))?}$/;
 	static readonly #measureRegExp = /^\|?(.*?)\|?$/;
-	static readonly #chordRegExp = /\[([^\]]*)\]/g;
+	static readonly #chunkRegExp = /(?!$)(?:\[([^\]]*)\])?([^\[]*)/gm;
 	static readonly #CSS_RULES = [
 		'.mono { font-family: monospace; }',
 		'.measures-container { display: flex; flex-wrap: balance; margin-top: 0.5em; margin-bottom: 0.5em; line-height: 1.2; font-size: 15px; }',
+		'.measures-container > span { display: flex; flex-wrap: balance; }',
+		'.measures-container > span > span { padding-right: 0.5em; }',
 		'.sidemenu-container { position: absolute; right: 0px; }', 
 		'form > * { padding: 5px; }'
 	];
@@ -97,21 +99,12 @@ class Chordpro {
 	}
 	static #parseMeasures(str: string): Measure[] {
 		const measureMatch = str.match(Chordpro.#measureRegExp)!;
-		const measureStringAry = measureMatch[1].split('|').concat('');
-		const measures = measureStringAry.map(e => {
-			const m = [...e.matchAll(Chordpro.#chordRegExp)];
-			const chords: Chord[] = [];
-			let lyric = e;
-			let cutLength = 0;
-			for (const e_ of m) {
-				const index = e_.index - cutLength;
-				const chord = e_[1];
-				chords.push({index, chord})
-				lyric = lyric.replace(e_[0], '');
-				cutLength += e_[0].length;
-			}
-			return {chords, lyric}
-		});
+		const measureStringAry = measureMatch[1].split('|');
+		const measures = measureStringAry.map(
+			e => [...e.matchAll(Chordpro.#chunkRegExp)].map(
+				e_ => {return {chord: e_[1], lyric: e_[2]}}
+			)
+		);
 		return measures;
 	}
 	static #parseLines(): void {
@@ -158,13 +151,20 @@ class Chordpro {
 		const containerElement = document.createElement('div');
 		containerElement.classList.add('measures-container');
 		for (const e of measures) {
+			const measureStart: Chunk = {chord: '|', lyric: '|'};
+			const measureEnd: Chunk = {chord: '|', lyric: '|'};
+
 			const measureElement = document.createElement('span');
-			const chordElement = document.createElement('div');
-			const lyricElement = document.createElement('div');
-			chordElement.textContent = `| ${e.chords.map(e => e.chord).join(' ')} ⁣`;
-			lyricElement.textContent = `| ${e.lyric} ⁣`;
-			measureElement.appendChild(chordElement);
-			measureElement.appendChild(lyricElement);
+			for (const e_ of [measureStart, ...e, measureEnd]) {
+				const chunkElement = document.createElement('span');
+				const chordElement = document.createElement('div');
+				const lyricElement = document.createElement('div');
+				chordElement.textContent = `⁣${e_.chord ?? ''}`;
+				lyricElement.textContent = `⁣${e_.lyric}`;
+				chunkElement.appendChild(chordElement);
+				chunkElement.appendChild(lyricElement);
+				measureElement.appendChild(chunkElement);
+			}
 			containerElement.appendChild(measureElement);
 		}
 		parent.appendChild(containerElement);
